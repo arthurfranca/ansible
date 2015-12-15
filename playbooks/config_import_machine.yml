@@ -1,0 +1,84 @@
+---
+- name: install sigvia-importers required tools
+  hosts: laptop # ec2_import_machines
+
+  vars:
+    repo:
+      branch: xlsx
+      url: 'git@github.com:prodec/sigvia-importers.git'
+    geos_version: '3.5.0'
+  # vars_files:
+  #   - /vars/private_vars.yml
+
+  tasks:
+  - name: install git
+    apt: name=git
+         state=latest
+         update_cache=yes
+    sudo: yes
+
+  - name: clone sigvia-importers repo
+    git: repo={{ repo.url }}
+         version={{ repo.branch }}
+         dest=~/sigvia-importers/
+         update=no
+
+  - name: install s3cmd
+    apt_key: url=http://s3tools.org/repo/deb-all/stable/s3tools.key
+    sudo: yes
+  - apt_repository: repo='deb http://s3tools.org/repo/deb-all stable/'
+    sudo: yes
+  - apt: name=s3cmd
+         state=latest
+         update_cache=yes
+    sudo: yes
+
+  - name: install proj4
+    apt: name={{ item }}
+         state=present
+    with_items:
+      - binutils
+      - libproj-dev
+      - gdal-bin
+    sudo: yes
+
+  - name: install geos installation required lib
+    apt: name=build-essential
+         state=latest
+    sudo: yes
+
+  - name: download and unpack geos
+    unarchive: src=http://download.osgeo.org/geos/geos-{{ geos_version }}.tar.bz2
+               dest=~/
+               copy=no
+               creates=~/geos-{{ geos_version }}/configure.ac # won't rerun when file found
+
+  - name: install geos installation required lib
+    apt: name=build-essential
+         state=present
+    sudo: yes
+
+  - name: check geos presence
+    command: geos-config --version
+    register: geos_installed_version
+    ignore_errors: yes
+
+  - name: config geos installation
+    command: ./configure
+             chdir=~/geos-{{ geos_version }}
+    when: geos_installed_version|failed or
+          geos_installed_version.stdout != geos_version
+
+  - name: make geos
+    shell: make
+           chdir=~/geos-{{ geos_version }}
+    when: geos_installed_version|failed or
+          geos_installed_version.stdout != geos_version
+
+  - name: install geos
+    shell: make install
+           chdir=/home/{{ansible_ssh_user}}/geos-{{ geos_version }}
+    when: geos_installed_version|failed or
+          geos_installed_version.stdout != geos_version
+    sudo: yes
+...
